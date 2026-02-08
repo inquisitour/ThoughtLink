@@ -1,6 +1,5 @@
 """
 Preprocessing for EEG and TD-NIRS signals
-Implements competitive advantages from research doc within ThoughtLink constraints
 """
 import numpy as np
 from scipy.signal import butter, filtfilt, iirnotch
