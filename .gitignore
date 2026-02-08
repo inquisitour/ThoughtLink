@@ -3,4 +3,4 @@ env/
 venv/
 
 # Ignore data folder
-data/
+data/cache/
