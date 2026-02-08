@@ -1,0 +1,140 @@
+# ThoughtLink Brain-Robot Configuration
+# Hybrid approach: Research advantages + ThoughtLink constraints
+
+# Dataset
+dataset:
+  name: "KernelCo/robot_control"
+  cache_dir: "./data/cache"
+  
+# Classes (5-class motor imagery)
+classes:
+  - "Right Fist"
+  - "Left Fist"
+  - "Both Fists"
+  - "Tongue Tapping"
+  - "Relax"
+
+# EEG Preprocessing (6 channels: AFF6, AFp2, AFp1, AFF5, FCz, CPz)
+eeg:
+  sampling_rate: 500  # Hz
+  channels: ["AFF6", "AFp2", "AFp1", "AFF5", "FCz", "CPz"]
+  
+  # Filtering
+  bandpass_low: 0.5   # Hz
+  bandpass_high: 45   # Hz
+  notch_freq: 50      # Hz (use 60 for US data)
+  notch_q: 30
+  
+  # Baseline correction (first 3 seconds = samples 0-1499)
+  baseline_start: 0
+  baseline_end: 1500
+  
+  # Active period for analysis (after stimulus at t=3s)
+  active_start: 1500  # Sample index (3s * 500 Hz)
+  active_end: 7499    # Full duration
+
+# TD-NIRS Preprocessing
+fnirs:
+  sampling_rate: 4.76  # Hz
+  n_modules: 40
+  n_sds: 3  # 0=short, 1=medium, 2=long
+  n_wavelengths: 2  # 690nm, 905nm
+  n_moments: 3  # M0=intensity, M1=mean_tof, M2=variance
+  
+  # Short-channel regression (CRITICAL - our edge)
+  use_short_channel_regression: true
+  sds_short: 0  # 0-10mm (scalp only)
+  sds_long: [1, 2]  # 10-25mm, 25-60mm (cortical signals)
+  
+  # Filtering
+  bandpass_low: 0.01  # Hz
+  bandpass_high: 0.5  # Hz
+  use_bandpass: false
+  
+  # Baseline correction (first ~3 seconds = 14 samples at 4.76 Hz)
+  baseline_start: 0
+  baseline_end: 14
+  
+  # Peak hemodynamic response window (t=8-12s = samples 38-57)
+  peak_window_start: 38  # ~8s
+  peak_window_end: 57    # ~12s
+
+# Feature Extraction
+features:
+  # TD-NIRS features (our primary signal source)
+  fnirs:
+    use_moments: [0, 2]  # M0 (intensity) and M2 (variance - highest cortical selectivity)
+    use_sds: 2           # Long channels only for cortical signals
+    use_wavelengths: [0, 1]  # Both wavelengths
+    extract_peak_mean: true
+    extract_slope: false  # Disable for speed
+    extract_late_minus_early: false  # Disable for speed
+    pca_components: 30  # Increasing from 30 to 40 worsened performance, likely due to overfitting given our small dataset and real-time constraints
+  
+  # EEG features (complementary fast dynamics)
+  eeg:
+    use_channels: ["FCz", "CPz"]  # Motor-relevant channels only
+    bands:
+      mu: [8, 13]      # Motor imagery ERD/ERS
+      beta: [13, 30]   # Motor execution
+    extract_bandpower: true
+    n_features_per_channel: 2  # 2 channels × 2 bands = 4 features
+
+# Model Configuration
+model:
+  type: "svm"  # Start simple: svm, rf, cnn, ensemble
+  
+  svm:
+    kernel: "rbf"
+    C: 1.0  # Increasing to 5.0 or 10.0 worsened performance, likely due to overfitting given our small dataset and real-time constraints
+    gamma: "scale" # Changing gamma to 'auto' worsened performance, likely due to overfitting given our small dataset and real-time constraints
+    class_weight: "balanced"
+    probability: true  # For confidence scores
+  
+  rf:
+    n_estimators: 100
+    max_depth: 10
+    class_weight: "balanced"
+  
+  cnn:
+    enabled: false  # Only enable if SVM plateaus
+    n_filters: [32, 64]
+    kernel_sizes: [5, 3]
+    dropout: 0.3
+    learning_rate: 0.001
+
+# Data Augmentation (if time permits)
+augmentation:
+  enabled: true
+  sliding_window: true
+  window_size: 1000  # 2 seconds at 500 Hz
+  window_step: 500   # 1 second overlap
+  gaussian_noise: false
+  noise_std: 0.05
+
+# Inference (ThoughtLink constraints - FAST)
+inference:
+  confidence_threshold: 0.6  # Reject predictions below this
+  temporal_smoothing: true
+  smoothing_window: 3  # Moving average over 3 predictions
+  max_latency_ms: 50   # Hard constraint
+  
+# Training
+training:
+  test_size: 0.2
+  random_state: 42
+  cross_validation: 5  # K-fold CV
+  
+# Evaluation Metrics
+evaluation:
+  track_latency: true
+  track_accuracy: true
+  track_per_class_accuracy: true
+  track_false_trigger_rate: true
+  
+# Logging
+logging:
+  level: "INFO"
+  save_models: true
+  model_dir: "./models"
+  results_dir: "./results"
